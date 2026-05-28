@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile and account balance information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique user ID from Firebase Auth." },
+        "email": { "type": "string", "format": "email", "description": "User's email address." },
+        "displayName": { "type": "string", "description": "User's full name." },
+        "role": { "type": "string", "enum": ["admin", "user"], "description": "User's access role." },
+        "balance": { "type": "number", "description": "Current account balance in USD." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp." }
+      },
+      "required": ["uid", "email", "role", "balance", "createdAt"]
+    },
+    "Transaction": {
+      "title": "Transaction Record",
+      "description": "Details of a financial transaction (deposit, withdrawal, or transfer).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique transaction ID." },
+        "userId": { "type": "string", "description": "ID of the user who initiated the transaction." },
+        "amount": { "type": "number", "description": "Transaction amount." },
+        "type": { "type": "string", "enum": ["deposit", "withdrawal", "transfer"], "description": "Type of transaction." },
+        "method": { "type": "string", "enum": ["Mobile Money", "Crypto", "Bank Transfer"], "description": "Payment method used." },
+        "status": { "type": "string", "enum": ["pending", "completed", "failed"], "description": "Current status of the transaction." },
+        "description": { "type": "string", "description": "Optional transaction description." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Transaction timestamp." }
+      },
+      "required": ["id", "userId", "amount", "type", "method", "status", "createdAt"]
+    },
+    "VirtualCard": {
+      "title": "Virtual Card",
+      "description": "Virtual payment card details.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique card ID." },
+        "userId": { "type": "string", "description": "Owner's user ID." },
+        "cardNumber": { "type": "string", "description": "Masked or full card number." },
+        "expiry": { "type": "string", "description": "Card expiry date (MM/YY)." },
+        "cvv": { "type": "string", "description": "Card CVV code." },
+        "status": { "type": "string", "enum": ["active", "blocked"], "description": "Card status." },
+        "balance": { "type": "number", "description": "Balance allocated to the card." }
+      },
+      "required": ["id", "userId", "cardNumber", "expiry", "cvv", "status", "balance"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents."
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Financial transaction history."
+    },
+    "/virtualCards/{cardId}": {
+      "schema": "VirtualCard",
+      "description": "Virtual card records."
+    }
+  }
+}

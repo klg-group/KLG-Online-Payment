@@ -1,0 +1,7 @@
+{
+  "name": "KLG Online Payment",
+  "description": "A comprehensive online banking and payment system featuring virtual cards, multi-channel transactions (Mobile Money, Crypto, Bank), and advanced admin controls.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

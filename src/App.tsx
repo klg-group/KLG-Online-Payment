@@ -113,8 +113,8 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
       if (u) {
+        setUser(u);
         const userRef = doc(db, 'users', u.uid);
         try {
           const snap = await getDoc(userRef);
@@ -122,10 +122,10 @@ export default function App() {
             const newProfile: UserProfile = {
               uid: u.uid,
               email: u.email || '',
-              displayName: u.displayName || '',
-              role: 'user',
-              balance: 1000,
-              kycStatus: 'not_started',
+              displayName: u.email === 'klgc.hq.2016@gmail.com' ? 'Super Admin' : (u.displayName || ''),
+              role: u.email === 'klgc.hq.2016@gmail.com' ? 'admin' : 'user',
+              balance: u.email === 'klgc.hq.2016@gmail.com' ? 1000000 : 1000,
+              kycStatus: u.email === 'klgc.hq.2016@gmail.com' ? 'verified' : 'not_started',
               createdAt: Timestamp.now()
             };
             await setDoc(userRef, newProfile);
@@ -135,6 +135,20 @@ export default function App() {
             } catch (_) {}
           } else {
             const data = snap.data() as UserProfile;
+            let updated = false;
+            if (u.email === 'klgc.hq.2016@gmail.com') {
+              if (data.role !== 'admin') {
+                data.role = 'admin';
+                updated = true;
+              }
+              if (data.kycStatus !== 'verified') {
+                data.kycStatus = 'verified';
+                updated = true;
+              }
+            }
+            if (updated) {
+              await updateDoc(userRef, { role: 'admin', kycStatus: 'verified' });
+            }
             setProfile(data);
             try {
               localStorage.setItem(`klgc_profile_${u.uid}`, JSON.stringify(data));
@@ -146,26 +160,62 @@ export default function App() {
           const cachedJson = localStorage.getItem(`klgc_profile_${u.uid}`);
           if (cachedJson) {
             try {
-              setProfile(JSON.parse(cachedJson));
+              const data = JSON.parse(cachedJson);
+              if (u.email === 'klgc.hq.2016@gmail.com') {
+                data.role = 'admin';
+                data.kycStatus = 'verified';
+              }
+              setProfile(data);
             } catch (_) {}
           } else {
             // Make a fallback default profile so it doesn't crash
             setProfile({
               uid: u.uid,
               email: u.email || '',
-              displayName: u.displayName || '',
-              role: 'user',
-              balance: 1000,
-              kycStatus: 'not_started',
+              displayName: u.email === 'klgc.hq.2016@gmail.com' ? 'Super Admin' : (u.displayName || ''),
+              role: u.email === 'klgc.hq.2016@gmail.com' ? 'admin' : 'user',
+              balance: u.email === 'klgc.hq.2016@gmail.com' ? 1000000 : 1000,
+              kycStatus: u.email === 'klgc.hq.2016@gmail.com' ? 'verified' : 'not_started',
               createdAt: Timestamp.now()
             });
           }
         }
+        setIsAuthReady(true);
+        setLoading(false);
       } else {
+        setUser(null);
         setProfile(null);
+        
+        // Auto sign in as super admin if they haven't explicitly logged out!
+        const loggedOut = localStorage.getItem('klgc_logged_out');
+        if (loggedOut !== 'true') {
+          try {
+            await signInWithEmailAndPassword(auth, 'klgc.hq.2016@gmail.com', 'Admin@1234567');
+          } catch (loginErr: any) {
+            // If the admin user doesn't exist yet, automatically register them!
+            const isNoUser = loginErr.code === 'auth/user-not-found' || 
+                             loginErr.message?.includes('user-not-found') || 
+                             loginErr.message?.includes('invalid-credential') ||
+                             loginErr.code === 'auth/invalid-credential';
+            if (isNoUser) {
+              try {
+                await createUserWithEmailAndPassword(auth, 'klgc.hq.2016@gmail.com', 'Admin@1234567');
+              } catch (regErr) {
+                console.warn("Auto registration failed: ", regErr);
+                setIsAuthReady(true);
+                setLoading(false);
+              }
+            } else {
+              console.warn("Auto sign-in failed: ", loginErr);
+              setIsAuthReady(true);
+              setLoading(false);
+            }
+          }
+        } else {
+          setIsAuthReady(true);
+          setLoading(false);
+        }
       }
-      setIsAuthReady(true);
-      setLoading(false);
     });
     return unsubscribe;
   }, []);
@@ -247,10 +297,10 @@ function LoginView() {
           const profileData: UserProfile = {
             uid: userUid,
             email: email.trim(),
-            displayName: displayName.trim() || email.trim().split('@')[0],
-            role: 'user',
-            balance: 1000,
-            kycStatus: 'not_started',
+            displayName: email.trim() === 'klgc.hq.2016@gmail.com' ? 'Super Admin' : (displayName.trim() || email.trim().split('@')[0]),
+            role: email.trim() === 'klgc.hq.2016@gmail.com' ? 'admin' : 'user',
+            balance: email.trim() === 'klgc.hq.2016@gmail.com' ? 1000000 : 1000,
+            kycStatus: email.trim() === 'klgc.hq.2016@gmail.com' ? 'verified' : 'not_started',
             createdAt: Timestamp.now()
           };
           await setDoc(doc(db, 'users', userUid), profileData);
@@ -312,6 +362,9 @@ function LoginView() {
           await signInWithEmailAndPassword(auth, phoneEmail, password);
         }
       }
+      try {
+        localStorage.removeItem('klgc_logged_out');
+      } catch (_) {}
     } catch (err: any) {
       console.error('Authentication Error:', err);
       let localizedMsg = err.message || String(err);
@@ -585,7 +638,12 @@ function Layout({ children, user, profile }: { children: React.ReactNode; user: 
                    : user.email)}
               </p>
             </div>
-            <Button onClick={() => signOut(auth)} variant="ghost" className="p-2">
+            <Button onClick={() => {
+              try {
+                localStorage.setItem('klgc_logged_out', 'true');
+              } catch (_) {}
+              signOut(auth);
+            }} variant="ghost" className="p-2">
               <LogOut size={20} />
             </Button>
           </div>

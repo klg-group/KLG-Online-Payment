@@ -39,7 +39,8 @@ import {
   Transaction, 
   VirtualCard, 
   TransactionType, 
-  TransactionMethod 
+  TransactionMethod,
+  SupportTicket
 } from './types';
 import { 
   CreditCard, 
@@ -96,6 +97,12 @@ import { ethers } from 'ethers';
 import { format } from 'date-fns';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { AdminUsersSection } from './components/AdminUsersSection';
+import { AdminSupportSection } from './components/AdminSupportSection';
+import { AdminControlPanel } from './components/AdminControlPanel';
+import { AdminFontSizeSection } from './components/AdminFontSizeSection';
+import { AdminBgColorSection } from './components/AdminBgColorSection';
+import { AdsRenderer } from './components/AdsRenderer';
 
 // --- Main App ---
 
@@ -155,6 +162,36 @@ export default function App() {
 
   const [loading, setLoading] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(true);
+
+  // Global Font Size and Background Color synchronization
+  useEffect(() => {
+    // 1. Initial Local settings load (instant load to avoid visual flash)
+    const localBg = localStorage.getItem('klgc_global_bg_color') || '#E4E3E0';
+    const localFontSize = localStorage.getItem('klgc_global_font_size') || '16';
+    
+    document.documentElement.style.setProperty('--bg', localBg);
+    document.documentElement.style.fontSize = `${localFontSize}px`;
+
+    // 2. Sync from Firestore settings
+    const styleRef = doc(db, 'settings', 'global_styles');
+    const unsub = onSnapshot(styleRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.bgColor) {
+          document.documentElement.style.setProperty('--bg', data.bgColor);
+          localStorage.setItem('klgc_global_bg_color', data.bgColor);
+        }
+        if (data.fontSize) {
+          document.documentElement.style.fontSize = `${data.fontSize}px`;
+          localStorage.setItem('klgc_global_font_size', data.fontSize);
+        }
+      }
+    }, (err) => {
+      console.warn("Firestore styling load offline or failed, using local settings:", err);
+    });
+
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
@@ -287,7 +324,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#E4E3E0]">
+      <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
         <Loader2 className="w-12 h-12 animate-spin text-black" />
       </div>
     );
@@ -486,7 +523,7 @@ function LoginView({
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-[#E4E3E0]">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-[var(--bg)]">
       <motion.div 
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -728,8 +765,46 @@ function Layout({ children, user, profile }: { children: React.ReactNode; user: 
     navItems.push({ icon: ShieldCheck, label: 'Admin', path: '/admin' });
   }
 
+  // Enforce account security locks/blocks
+  if (profile && ((profile as any).blocked === true || (profile as any).suspended === true)) {
+    return (
+      <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center p-4">
+        <div className="bg-white border-2 border-black p-8 max-w-sm w-full shadow-[16px_16px_0px_0px_rgba(0,0,0,1)] text-center space-y-6">
+          <div className="bg-red-100 text-red-650 p-4 border border-red-500 rounded-none inline-block">
+            <Ban size={48} className="mx-auto" />
+          </div>
+          <h1 className="text-2xl font-black uppercase tracking-tight text-black leading-none">Security Access Revoked</h1>
+          <p className="text-xs text-gray-700 leading-relaxed font-sans">
+            {(profile as any).blocked 
+              ? "This account has been permanently BLOCKED from KLG Global Financial Services for compliance/policy violations."
+              : "This account has been temporarily SUSPENDED by Core Security operations pending transaction audits."}
+          </p>
+          <div className="p-3 bg-gray-50 border border-black border-dashed text-[10px] uppercase font-bold text-gray-500 font-mono text-center">
+            Target Code: ENFORCE_COMPLIANCE_BYPASS_RESTRICT
+          </div>
+          <button
+            onClick={() => {
+              try {
+                localStorage.setItem('klgc_logged_out', 'true');
+                localStorage.removeItem('klgc_local_admin_active');
+              } catch (_) {}
+              signOut(auth);
+              window.location.reload();
+            }}
+            className="w-full py-3 bg-black hover:bg-gray-800 text-white border-2 border-black font-black uppercase text-xs tracking-widest transition-all"
+          >
+            Sign Out Account
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col pb-16 md:pb-0">
+      {/* Top Fixed Area Ad Placement */}
+      <AdsRenderer position="fixed_top" />
+
       <header className="border-b border-black bg-white sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -814,7 +889,8 @@ function Layout({ children, user, profile }: { children: React.ReactNode; user: 
       <main className="flex-1">
         {children}
       </main>
-      <footer className="border-t border-black p-8 bg-white">
+      
+      <footer className="border-t border-black p-8 bg-white pb-24 md:pb-8">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
           <div className="text-center md:text-left">
             <p className="font-black italic text-xl">KLG ONLINE</p>
@@ -828,6 +904,34 @@ function Layout({ children, user, profile }: { children: React.ReactNode; user: 
           </div>
         </div>
       </footer>
+
+      {/* Bottom Fixed Area Ad Placement */}
+      <AdsRenderer position="fixed_bottom" />
+
+      {/* Popup Overlay & Sliding Promotion Panels */}
+      <AdsRenderer position="popup" />
+      <AdsRenderer position="sliding" />
+
+      {/* Mobile Sticky Bottom Navigation ("Rooter Menu" completely aligned down to bottom) */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 w-full bg-white border-t-2 border-black z-50 flex justify-around items-center h-16 shadow-[0_-4px_10px_rgba(0,0,0,0.06)] select-none">
+        {navItems.map(item => {
+          const Icon = item.icon;
+          const isActive = location.pathname === item.path;
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={cn(
+                "flex flex-col items-center justify-center flex-1 h-full py-1 text-center font-black tracking-tighter text-[9px] uppercase",
+                isActive ? "text-black scale-102" : "text-gray-400"
+              )}
+            >
+              <Icon size={18} className={cn("mb-1", isActive ? "text-black" : "text-gray-400")} />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }
@@ -1125,8 +1229,19 @@ function DashboardView({ user, profile }: { user: User; profile: UserProfile | n
     }
   };
 
+  const noticeBannerText = localStorage.getItem('klgc_notice_banner') || 'Welcome back! KLG financial server nodes are fully upgraded to block latency bottlenecks.';
+  const isNoticeBannerActive = localStorage.getItem('klgc_notice_banner_active') !== 'false';
+
   return (
     <div className="max-w-7xl w-full mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+      {isNoticeBannerActive && (
+        <div className="lg:col-span-12 bg-amber-400 border-2 border-black p-3 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center justify-between select-none">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <span className="bg-black text-white text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 shrink-0 block">SYS NOTICE</span>
+            <p className="text-xs font-black text-black truncate tracking-tight">{noticeBannerText}</p>
+          </div>
+        </div>
+      )}
       <div className="lg:col-span-4 space-y-8">
         <Card className="bg-black text-white shadow-[8px_8px_0px_0px_rgba(255,255,255,0.1)]">
           <p className="col-header text-white/50 mb-2">Available Balance</p>
@@ -1207,14 +1322,14 @@ function DashboardView({ user, profile }: { user: User; profile: UserProfile | n
           </div>
         </Card>
 
-        <Card className="h-full flex flex-col">
+        <Card className="flex flex-col">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-bold uppercase tracking-tight flex items-center gap-2">
               <History size={20} /> Recent Activity
             </h2>
             <Link to="/transactions" className="text-[10px] font-bold hover:underline">VIEW ALL HISTORY</Link>
           </div>
-          <div className="flex-1 overflow-auto">
+          <div className="overflow-x-auto w-full">
             <div className="grid grid-cols-4 col-header px-4 mb-2">
               <div>Date</div>
               <div>Description</div>
@@ -1760,47 +1875,170 @@ function SettingsView({ user, profile }: { user: User; profile: UserProfile | nu
 }
 
 function SupportView() {
+  const [subject, setSubject] = useState('');
+  const [messageText, setMessageText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [userTickets, setUserTickets] = useState<SupportTicket[]>([]);
+
+  const currentUserEmail = auth.currentUser?.email || 'guest@klgpayments.internal';
+  const currentUserUid = auth.currentUser?.uid || 'guest_uid';
+
+  useEffect(() => {
+    const q = query(
+      collection(db, 'support_tickets'),
+      where('userId', '==', currentUserUid),
+      orderBy('createdAt', 'desc')
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setUserTickets(snap.docs.map(d => ({ id: d.id, ...d.data() } as SupportTicket)));
+    }, () => {
+      const cached = localStorage.getItem('klgc_local_tickets');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached) as SupportTicket[];
+          setUserTickets(parsed.filter(t => t.userId === currentUserUid));
+        } catch (_) {}
+      }
+    });
+
+    return () => unsub();
+  }, [currentUserUid]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!subject.trim() || !messageText.trim()) return;
+
+    setLoading(true);
+    try {
+      const ticketId = `ticket_${Math.random().toString(36).substring(2, 10)}`;
+      const payload: SupportTicket = {
+        id: ticketId,
+        userId: currentUserUid,
+        userEmail: currentUserEmail,
+        subject: subject.trim(),
+        message: messageText.trim(),
+        status: 'open',
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      };
+
+      await setDoc(doc(db, 'support_tickets', ticketId), payload);
+      
+      const cached = localStorage.getItem('klgc_local_tickets');
+      let tList: any[] = [];
+      if (cached) {
+        try { tList = JSON.parse(cached); } catch (_) {}
+      }
+      tList.unshift(payload);
+      localStorage.setItem('klgc_local_tickets', JSON.stringify(tList));
+
+      setSubject('');
+      setMessageText('');
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="max-w-4xl w-full mx-auto p-4 md:p-8">
-      <h1 className="text-3xl font-black tracking-tighter uppercase italic mb-8">Support Center</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <Card title="Contact Us">
-          <p className="text-sm mb-4">Need help? Our team is available 24/7 to assist you with any issues.</p>
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-black text-white p-2"><Bell size={16} /></div>
-              <div>
-                <p className="text-[10px] font-bold uppercase opacity-50">Email Support</p>
-                <p className="text-sm font-bold">support@klgpayment.com</p>
+    <div className="max-w-6xl w-full mx-auto p-4 md:p-8 space-y-8 select-none">
+      <h1 className="text-3xl font-black tracking-tighter uppercase italic">KLG Support Desk</h1>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Support Ticket Submission */}
+        <div className="lg:col-span-5">
+          <Card title="Open Compliance Ticket">
+            <p className="text-xs text-gray-500 mb-4 uppercase font-bold tracking-tight">Need assistance? Disbursed tickets are reviewed immediately by standard operators.</p>
+            
+            {success && (
+              <div className="p-3 bg-green-50 border-2 border-green-600 text-[10px] font-black uppercase text-green-700 tracking-wider mb-4 flex items-center gap-1.5 animate-bounce">
+                <Check className="shrink-0" size={14} /> Ticket registered successfully!
               </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="bg-black text-white p-2"><Users size={16} /></div>
-              <div>
-                <p className="text-[10px] font-bold uppercase opacity-50">Live Chat</p>
-                <p className="text-sm font-bold">Available in-app</p>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4 font-sans">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block">MATTER SUBJECT</label>
+                <input
+                  type="text"
+                  required
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="e.g. Virtual Card Deposit Pending Verification"
+                  className="w-full bg-white border border-black p-2.5 text-xs font-semibold focus:outline-none"
+                />
               </div>
-            </div>
-          </div>
-        </Card>
-        <Card title="FAQs">
-          <div className="space-y-4">
-            <details className="group border-b border-black pb-2">
-              <summary className="font-bold cursor-pointer list-none flex justify-between items-center">
-                How long do withdrawals take?
-                <Plus size={14} className="group-open:rotate-45 transition-transform" />
-              </summary>
-              <p className="text-xs mt-2 text-gray-600">Withdrawals are typically processed within 24 hours after admin approval.</p>
-            </details>
-            <details className="group border-b border-black pb-2">
-              <summary className="font-bold cursor-pointer list-none flex justify-between items-center">
-                Are virtual cards free?
-                <Plus size={14} className="group-open:rotate-45 transition-transform" />
-              </summary>
-              <p className="text-xs mt-2 text-gray-600">Yes, KLG users can issue up to 3 virtual cards for free.</p>
-            </details>
-          </div>
-        </Card>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest block">EXPLAIN YOUR ISSUE IN DETAIL</label>
+                <textarea
+                  required
+                  value={messageText}
+                  onChange={(e) => setMessageText(e.target.value)}
+                  placeholder="Describe standard parameters, billing nodes, names or transaction details..."
+                  rows={4}
+                  className="w-full bg-white border border-black p-2.5 text-xs font-semibold focus:outline-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 bg-black hover:bg-gray-800 text-white font-black uppercase text-[10px] tracking-widest transition-all select-none flex items-center justify-center gap-1 border border-black"
+              >
+                {loading ? 'SYNCING TICKET NODES...' : 'DISPATCH COMPLIANCE TICKET'}
+              </button>
+            </form>
+          </Card>
+        </div>
+
+        {/* Support Tickets Queue */}
+        <div className="lg:col-span-7 space-y-6">
+          <Card title="Your Ticket Logs">
+            {userTickets.length === 0 ? (
+              <div className="py-8 text-center text-gray-400 italic text-xs bg-gray-50 border border-black border-dashed rounded-none">
+                No tickets filed under this active session profile yet.
+              </div>
+            ) : (
+              <div className="space-y-4 max-h-[460px] overflow-auto pr-1">
+                {userTickets.map(t => (
+                  <div key={t.id} className="border border-black p-4 bg-white space-y-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                    <div className="flex justify-between items-center border-b border-black/10 pb-1.5">
+                      <span className="text-[10px] font-mono text-gray-400">ID: {t.id}</span>
+                      <span className={`px-2 py-0.5 border text-[8px] font-black uppercase pb-0.5 ${
+                        t.status === 'open' 
+                          ? 'bg-red-50 border-red-500 text-red-600 animate-pulse' 
+                          : 'bg-green-50 border-green-500 text-green-600'
+                      }`}>
+                        {t.status}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <h4 className="text-[10px] font-mono uppercase font-black text-gray-500">Subject / Matter</h4>
+                      <p className="text-xs font-black text-black leading-snug">{t.subject}</p>
+                    </div>
+
+                    <div className="text-[11px] leading-relaxed text-gray-700 bg-gray-50 border border-black/5 p-2 font-sans truncate">
+                      {t.message}
+                    </div>
+
+                    {t.adminReply && (
+                      <div className="p-2.5 bg-green-50 border border-green-300 text-[11px] leading-relaxed text-green-900 rounded-none">
+                        <span className="text-[8px] font-black uppercase text-green-700 tracking-wider block mb-0.5">✔️ Administrative Reply Response:</span>
+                        {t.adminReply}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
       </div>
     </div>
   );
@@ -1837,7 +2075,7 @@ function APIView() {
 
 function TermsView() {
   return (
-    <div className="min-h-screen bg-[#E4E3E0] p-8">
+    <div className="min-h-screen bg-[var(--bg)] p-8">
       <div className="max-w-3xl mx-auto bg-white border-2 border-black p-12 shadow-[16px_16px_0px_0px_rgba(0,0,0,1)]">
         <Link to="/" className="inline-block mb-8 font-black italic text-2xl bg-black text-white px-4 py-1">KLG</Link>
         <h1 className="text-4xl font-black tracking-tighter uppercase italic mb-8">Terms of Service</h1>
@@ -1860,7 +2098,7 @@ function TermsView() {
 
 function PrivacyView() {
   return (
-    <div className="min-h-screen bg-[#E4E3E0] p-8">
+    <div className="min-h-screen bg-[var(--bg)] p-8">
       <div className="max-w-3xl mx-auto bg-white border-2 border-black p-12 shadow-[16px_16px_0px_0px_rgba(0,0,0,1)]">
         <Link to="/" className="inline-block mb-8 font-black italic text-2xl bg-black text-white px-4 py-1">KLG</Link>
         <h1 className="text-4xl font-black tracking-tighter uppercase italic mb-8">Privacy Policy</h1>
@@ -2058,6 +2296,7 @@ function AdminView() {
   const [pendingTransactions, setPendingTransactions] = useState<Transaction[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [adminSubTab, setAdminSubTab] = useState<'approvals' | 'users' | 'support' | 'control_panel' | 'font_size' | 'bg_color'>('approvals');
 
   useEffect(() => {
     const q = query(collection(db, 'transactions'), where('status', '==', 'pending'), orderBy('createdAt', 'desc'));
@@ -2130,48 +2369,124 @@ function AdminView() {
   };
 
   return (
-    <div className="max-w-7xl w-full mx-auto p-4 md:p-8 space-y-8">
-      <div className="flex items-center gap-4">
-        <ShieldCheck className="text-red-600" size={32} />
-        <h1 className="text-3xl font-black tracking-tighter uppercase italic">Admin Control Center</h1>
+    <div className="max-w-7xl w-full mx-auto p-4 md:p-8 space-y-8 select-none">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-black">
+        <div className="flex items-center gap-4">
+          <ShieldCheck className="text-black" size={32} />
+          <div>
+            <h1 className="text-3xl font-black tracking-tighter uppercase italic leading-none">Admin Control Center</h1>
+            <p className="text-[10px] text-gray-500 font-bold uppercase mt-1">Sovereign Financial Ledger Override Deck</p>
+          </div>
+        </div>
+
+        {/* Sub-Tabs Selector */}
+        <div className="flex flex-wrap border border-black divide-x divide-black bg-white rounded-none">
+          {(
+            [
+              { id: 'approvals', label: 'Approvals Queue' },
+              { id: 'users', label: 'Users & KYC' },
+              { id: 'support', label: 'Support Desk' },
+              { id: 'control_panel', label: 'Operations Panel' },
+              { id: 'font_size', label: 'Font Sizing' },
+              { id: 'bg_color', label: 'Background Color' },
+            ] as const
+          ).map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setAdminSubTab(tab.id)}
+              className={`px-4 py-2 text-[10px] font-black uppercase tracking-wider transition-all ${
+                adminSubTab === tab.id 
+                  ? 'bg-black text-white' 
+                  : 'text-black bg-white hover:bg-gray-100'
+              }`}
+            >
+              {tab.label}
+              {tab.id === 'approvals' && pendingTransactions.length > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.5 bg-red-650 text-white rounded-none font-bold text-[8px] animate-pulse">
+                  {pendingTransactions.length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <Card title="Pending Approvals">
-          <div className="space-y-4">
-            {pendingTransactions.length === 0 ? (
-              <p className="text-sm text-gray-500 italic">No pending transactions</p>
-            ) : (
-              pendingTransactions.map(t => (
-                <div key={t.id} className="border border-black p-4 bg-gray-50 flex justify-between items-center">
-                  <div>
-                    <p className="text-xs font-bold uppercase">{t.type} - {t.method}</p>
-                    <p className="text-lg font-black">${t.amount.toFixed(2)}</p>
-                    <p className="text-[10px] opacity-50">User: {t.userId}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => handleApprove(t)} className="p-2 bg-green-600 text-white hover:bg-green-700"><Check size={16} /></button>
-                    <button onClick={() => handleReject(t)} className="p-2 bg-red-600 text-white hover:bg-red-700"><Ban size={16} /></button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
-
-        <Card title="User Directory">
-          <div className="space-y-2">
-            {users.map(u => (
-              <div key={u.uid} className="flex justify-between items-center p-2 border-b border-gray-200">
-                <div>
-                  <p className="text-xs font-bold">{u.displayName || u.email}</p>
-                  <p className="text-[10px] opacity-50">{u.role}</p>
-                </div>
-                <p className="font-mono text-xs font-bold">${u.balance.toFixed(2)}</p>
+      <div>
+        {adminSubTab === 'approvals' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <Card title="Pending Approvals Checklist">
+              <div className="space-y-4">
+                {pendingTransactions.length === 0 ? (
+                  <p className="text-sm text-gray-550 italic uppercase font-semibold text-center border border-black border-dashed py-8">
+                    Incoming deposits and withdrawals cleared!
+                  </p>
+                ) : (
+                  pendingTransactions.map(t => (
+                    <div key={t.id} className="border border-black p-4 bg-gray-50 flex justify-between items-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-tight text-amber-500">{t.type} - {t.method}</p>
+                        <p className="text-2xl font-black text-black">${t.amount.toFixed(2)}</p>
+                        <p className="text-[10px] font-mono text-gray-400">User UID: {t.userId}</p>
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <button onClick={() => handleApprove(t)} className="p-3 bg-black hover:bg-gray-800 text-white font-bold border border-black"><Check size={16} /></button>
+                        <button onClick={() => handleReject(t)} className="p-3 bg-red-100 hover:bg-red-600 hover:text-white text-red-600 font-bold border border-red-400"><Ban size={16} /></button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
-            ))}
+            </Card>
+
+            <Card title="Operational Quick Stats">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-gray-50 border border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-center">
+                  <p className="text-[9px] font-black uppercase text-gray-500 tracking-wider">Registered Officers</p>
+                  <p className="text-3xl font-black mt-1 text-black">{users.length}</p>
+                </div>
+                <div className="p-4 bg-gray-50 border border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-center">
+                  <p className="text-[9px] font-black uppercase text-gray-500 tracking-wider">Awaiting Verification</p>
+                  <p className="text-3xl font-black mt-1 text-amber-500">{users.filter(u => u.kycStatus === 'pending').length}</p>
+                </div>
+              </div>
+            </Card>
           </div>
-        </Card>
+        )}
+
+        {adminSubTab === 'users' && (
+          <div className="border border-black p-4 bg-[#F3F2EE] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+            <h3 className="text-xs font-black uppercase mb-3 tracking-widest text-gray-400">Global Customer Registry Ledger</h3>
+            <AdminUsersSection users={users} onRefresh={() => {}} />
+          </div>
+        )}
+
+        {adminSubTab === 'support' && (
+          <div className="border border-black p-4 bg-[#F3F2EE] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+            <h3 className="text-xs font-black uppercase mb-3 tracking-widest text-gray-400">Compliance & Support Communication Desk</h3>
+            <AdminSupportSection />
+          </div>
+        )}
+
+        {adminSubTab === 'control_panel' && (
+          <div className="border border-black p-4 bg-[#F3F2EE] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+            <h3 className="text-xs font-black uppercase mb-3 tracking-widest text-gray-400">Direct Manual Operational Controls & AI Sizing Services</h3>
+            <AdminControlPanel />
+          </div>
+        )}
+
+        {adminSubTab === 'font_size' && (
+          <div className="border border-black p-4 bg-[#F3F2EE] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+            <h3 className="text-xs font-black uppercase mb-3 tracking-widest text-gray-400">Typography Scale Management Panel</h3>
+            <AdminFontSizeSection />
+          </div>
+        )}
+
+        {adminSubTab === 'bg_color' && (
+          <div className="border border-black p-4 bg-[#F3F2EE] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+            <h3 className="text-xs font-black uppercase mb-3 tracking-widest text-gray-400">Canvas & Solid Color Theme Management Panel</h3>
+            <AdminBgColorSection />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2281,7 +2596,7 @@ const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean; onClose:
           initial={{ scale: 0.9, opacity: 0 }} 
           animate={{ scale: 1, opacity: 1 }} 
           exit={{ scale: 0.9, opacity: 0 }}
-          className="relative bg-[#E4E3E0] border-2 border-black p-8 max-w-lg w-full shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]"
+          className="relative bg-[var(--bg)] border-2 border-black p-8 max-w-lg w-full shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]"
         >
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold uppercase tracking-tighter italic">{title}</h2>

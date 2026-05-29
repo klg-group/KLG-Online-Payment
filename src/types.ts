@@ -57,3 +57,44 @@ export interface ExternalApiConfig {
   testStatus?: 'success' | 'failed' | 'not_tested';
   createdAt: Timestamp;
 }
+
+export interface AdConfig {
+  id: string;
+  type: 'fixed_top' | 'fixed_bottom' | 'popup' | 'sliding';
+  isActive: boolean;
+  content: string; // HTML script, link or text message
+  linkUrl?: string;
+  imageUrl?: string;
+  slidingDirection?: 'left-to-right' | 'right-to-left';
+  createdAt: Timestamp;
+}
+
+export interface SupportTicket {
+  id: string;
+  userId: string;
+  userEmail: string;
+  subject: string;
+  message: string;
+  status: 'open' | 'resolved';
+  adminReply?: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface SecurityAlert {
+  id: string;
+  title: string;
+  severity: 'low' | 'medium' | 'high';
+  description: string;
+  status: 'active' | 'resolved';
+  createdAt: Timestamp;
+}
+
+export interface WasteItem {
+  id: string;
+  type: 'virtual_card' | 'transaction' | 'ticket';
+  title: string;
+  deletedAt: Timestamp;
+  originalData: any;
+}
+

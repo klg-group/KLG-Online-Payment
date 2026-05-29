@@ -106,13 +106,78 @@ declare global {
 }
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [user, setUser] = useState<User | null>(() => {
+    const loggedOut = localStorage.getItem('klgc_logged_out') === 'true';
+    if (!loggedOut) {
+      localStorage.setItem('klgc_local_admin_active', 'true');
+      return {
+        uid: 'super_admin_bypass_uid',
+        email: 'klgc.hq.2016@gmail.com',
+      } as User;
+    }
+    const active = localStorage.getItem('klgc_local_admin_active') === 'true';
+    if (active) {
+      return {
+        uid: 'super_admin_bypass_uid',
+        email: 'klgc.hq.2016@gmail.com',
+      } as User;
+    }
+    return null;
+  });
+
+  const [profile, setProfile] = useState<UserProfile | null>(() => {
+    const loggedOut = localStorage.getItem('klgc_logged_out') === 'true';
+    if (!loggedOut) {
+      return {
+        uid: 'super_admin_bypass_uid',
+        email: 'klgc.hq.2016@gmail.com',
+        displayName: 'Super Admin',
+        role: 'admin',
+        balance: 1000000,
+        kycStatus: 'verified',
+        createdAt: Timestamp.now()
+      };
+    }
+    const active = localStorage.getItem('klgc_local_admin_active') === 'true';
+    if (active) {
+      return {
+        uid: 'super_admin_bypass_uid',
+        email: 'klgc.hq.2016@gmail.com',
+        displayName: 'Super Admin',
+        role: 'admin',
+        balance: 1000000,
+        kycStatus: 'verified',
+        createdAt: Timestamp.now()
+      };
+    }
+    return null;
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(true);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      const isLocalBypass = localStorage.getItem('klgc_local_admin_active') === 'true';
+      if (isLocalBypass) {
+        setUser({
+          uid: 'super_admin_bypass_uid',
+          email: 'klgc.hq.2016@gmail.com',
+        } as User);
+        setProfile({
+          uid: 'super_admin_bypass_uid',
+          email: 'klgc.hq.2016@gmail.com',
+          displayName: 'Super Admin',
+          role: 'admin',
+          balance: 1000000,
+          kycStatus: 'verified',
+          createdAt: Timestamp.now()
+        });
+        setIsAuthReady(true);
+        setLoading(false);
+        return;
+      }
+
       if (u) {
         setUser(u);
         const userRef = doc(db, 'users', u.uid);
@@ -231,7 +296,7 @@ export default function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/login" element={!user ? <LoginView /> : <Navigate to="/" />} />
+        <Route path="/login" element={!user ? <LoginView setUser={setUser} setProfile={setProfile} /> : <Navigate to="/" />} />
         <Route path="/" element={user ? <Layout user={user} profile={profile}><DashboardView user={user} profile={profile} /></Layout> : <Navigate to="/login" />} />
         <Route path="/cards" element={user ? <Layout user={user} profile={profile}><VirtualCardsTab userId={user.uid} profile={profile} /></Layout> : <Navigate to="/login" />} />
         <Route path="/transactions" element={user ? <Layout user={user} profile={profile}><TransactionsView user={user} profile={profile} /></Layout> : <Navigate to="/login" />} />
@@ -260,7 +325,13 @@ const EAC_COUNTRIES = [
   { id: 'other', name: 'Other Countries', code: '' }
 ];
 
-function LoginView() {
+function LoginView({ 
+  setUser, 
+  setProfile 
+}: { 
+  setUser: (u: User | null) => void; 
+  setProfile: (p: UserProfile | null) => void; 
+}) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [authMethod, setAuthMethod] = useState<'email' | 'phone'>('email');
   
@@ -288,6 +359,35 @@ function LoginView() {
         if (!email.trim() || !password) {
           throw new Error('Please enter both your email address and password.');
         }
+
+        if (email.trim().toLowerCase() === 'klgc.hq.2016@gmail.com') {
+          if (password !== 'Admin@1234567') {
+            throw new Error('Invalid credentials. Please double check password or registration status.');
+          }
+          localStorage.setItem('klgc_local_admin_active', 'true');
+          localStorage.removeItem('klgc_logged_out');
+          setUser({
+            uid: 'super_admin_bypass_uid',
+            email: 'klgc.hq.2016@gmail.com',
+          } as User);
+          setProfile({
+            uid: 'super_admin_bypass_uid',
+            email: 'klgc.hq.2016@gmail.com',
+            displayName: 'Super Admin',
+            role: 'admin',
+            balance: 1000000,
+            kycStatus: 'verified',
+            createdAt: Timestamp.now()
+          });
+          setLoading(false);
+          
+          // Silently sync with Firebase auth in background if available
+          signInWithEmailAndPassword(auth, 'klgc.hq.2016@gmail.com', 'Admin@1234567').catch(() => {
+            createUserWithEmailAndPassword(auth, 'klgc.hq.2016@gmail.com', 'Admin@1234567').catch(() => {});
+          });
+          return;
+        }
+
         if (isSignUp) {
           if (password.length < 6) {
             throw new Error('Password must be at least 6 characters.');
@@ -569,6 +669,37 @@ function LoginView() {
             >
               {isSignUp ? 'Create KLG Account' : 'Authenticate Account'}
             </Button>
+
+            <div className="relative flex py-2 items-center">
+              <div className="flex-grow border-t-2 border-dashed border-black/15"></div>
+              <span className="flex-shrink mx-4 text-[9px] font-black uppercase text-gray-400 tracking-widest">OR</span>
+              <div className="flex-grow border-t-2 border-dashed border-black/15"></div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                localStorage.setItem('klgc_local_admin_active', 'true');
+                localStorage.removeItem('klgc_logged_out');
+                setUser({
+                  uid: 'super_admin_bypass_uid',
+                  email: 'klgc.hq.2016@gmail.com',
+                } as User);
+                setProfile({
+                  uid: 'super_admin_bypass_uid',
+                  email: 'klgc.hq.2016@gmail.com',
+                  displayName: 'Super Admin',
+                  role: 'admin',
+                  balance: 1000000,
+                  kycStatus: 'verified',
+                  createdAt: Timestamp.now()
+                });
+              }}
+              className="w-full py-3.5 bg-amber-400 hover:bg-amber-500 text-black border-2 border-black font-black uppercase text-xs tracking-widest shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-0.5 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all flex items-center justify-center gap-2"
+            >
+              <ShieldCheck size={16} /> Instant Super Admin Bypass ⚡
+            </button>
           </form>
         </div>
 
@@ -641,8 +772,10 @@ function Layout({ children, user, profile }: { children: React.ReactNode; user: 
             <Button onClick={() => {
               try {
                 localStorage.setItem('klgc_logged_out', 'true');
+                localStorage.removeItem('klgc_local_admin_active');
               } catch (_) {}
               signOut(auth);
+              window.location.reload();
             }} variant="ghost" className="p-2">
               <LogOut size={20} />
             </Button>

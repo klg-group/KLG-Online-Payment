@@ -7,6 +7,8 @@ export interface UserProfile {
   uid: string;
   email: string;
   displayName?: string;
+  phoneNumber?: string;
+  country?: string;
   role: UserRole;
   balance: number;
   kycStatus: KYCStatus;

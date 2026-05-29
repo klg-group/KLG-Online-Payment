@@ -9,8 +9,8 @@ import {
   Navigate
 } from 'react-router-dom';
 import { 
-  signInWithPopup, 
-  GoogleAuthProvider, 
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut, 
   onAuthStateChanged, 
   User 
@@ -51,6 +51,7 @@ import {
   LogOut, 
   ShieldCheck, 
   Plus, 
+  Mail,
   Wallet,
   AlertCircle,
   CheckCircle2,
@@ -196,13 +197,138 @@ export default function App() {
   );
 }
 
+const EAC_COUNTRIES = [
+  { id: 'ss', name: 'South Sudan', code: '+211' },
+  { id: 'sd', name: 'Sudan', code: '+249' },
+  { id: 'cd', name: 'DR Congo', code: '+243' },
+  { id: 'ug', name: 'Uganda', code: '+256' },
+  { id: 'ke', name: 'Kenya', code: '+254' },
+  { id: 'tz', name: 'Tanzania', code: '+255' },
+  { id: 'so', name: 'Somalia', code: '+252' },
+  { id: 'rw', name: 'Rwanda', code: '+250' },
+  { id: 'bi', name: 'Burundi', code: '+257' },
+  { id: 'other', name: 'Other Countries', code: '' }
+];
+
 function LoginView() {
-  const handleLogin = async () => {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [authMethod, setAuthMethod] = useState<'email' | 'phone'>('email');
+  
+  // Inputs
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  
+  // Phone Inputs
+  const [selectedCountryId, setSelectedCountryId] = useState('ss');
+  const [customCountryCode, setCustomCountryCode] = useState('+');
+  const [customCountryName, setCustomCountryName] = useState('');
+  const [phone, setPhone] = useState('');
+  
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (err) {
-      console.error('Login Error:', err);
+      if (authMethod === 'email') {
+        if (!email.trim() || !password) {
+          throw new Error('Please enter both your email address and password.');
+        }
+        if (isSignUp) {
+          if (password.length < 6) {
+            throw new Error('Password must be at least 6 characters.');
+          }
+          const userCred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+          const userUid = userCred.user.uid;
+          const profileData: UserProfile = {
+            uid: userUid,
+            email: email.trim(),
+            displayName: displayName.trim() || email.trim().split('@')[0],
+            role: 'user',
+            balance: 1000,
+            kycStatus: 'not_started',
+            createdAt: Timestamp.now()
+          };
+          await setDoc(doc(db, 'users', userUid), profileData);
+        } else {
+          await signInWithEmailAndPassword(auth, email.trim(), password);
+        }
+      } else {
+        // Phone method
+        if (!phone.trim() || !password) {
+          throw new Error('Please enter both your phone number and password.');
+        }
+        
+        let finalCode = '';
+        let finalCountryName = '';
+        
+        if (selectedCountryId === 'other') {
+          if (!customCountryCode.trim() || customCountryCode.trim() === '+') {
+            throw new Error('Please enter a country code (e.g. +1).');
+          }
+          finalCode = customCountryCode.trim();
+          if (!finalCode.startsWith('+')) {
+            finalCode = '+' + finalCode;
+          }
+          finalCountryName = customCountryName.trim() || 'Other Country';
+        } else {
+          const matched = EAC_COUNTRIES.find(c => c.id === selectedCountryId);
+          finalCode = matched?.code || '';
+          finalCountryName = matched?.name || '';
+        }
+
+        const cleanCode = finalCode.replace(/[^0-9]/g, '');
+        const cleanPhone = phone.trim().replace(/[^0-9]/g, '');
+        
+        if (!cleanPhone) {
+          throw new Error('Please enter a valid phone number.');
+        }
+        
+        const phoneEmail = `${cleanCode}${cleanPhone}@phone.klgpayments.internal`;
+        
+        if (isSignUp) {
+          if (password.length < 6) {
+            throw new Error('Password must be at least 6 characters.');
+          }
+          const userCred = await createUserWithEmailAndPassword(auth, phoneEmail, password);
+          const userUid = userCred.user.uid;
+          const profileData: UserProfile = {
+            uid: userUid,
+            email: phoneEmail,
+            displayName: displayName.trim() || `${finalCode} ${phone.trim()}`,
+            phoneNumber: `${finalCode} ${phone.trim()}`,
+            country: finalCountryName,
+            role: 'user',
+            balance: 1000,
+            kycStatus: 'not_started',
+            createdAt: Timestamp.now()
+          };
+          await setDoc(doc(db, 'users', userUid), profileData);
+        } else {
+          await signInWithEmailAndPassword(auth, phoneEmail, password);
+        }
+      }
+    } catch (err: any) {
+      console.error('Authentication Error:', err);
+      let localizedMsg = err.message || String(err);
+      if (localizedMsg.includes('auth/invalid-credential') || 
+          localizedMsg.includes('auth/wrong-password') || 
+          localizedMsg.includes('auth/user-not-found')) {
+        localizedMsg = 'Invalid credentials. Please double check password or registration status.';
+      } else if (localizedMsg.includes('auth/email-already-in-use')) {
+        localizedMsg = 'An account with this email or phone number already exists.';
+      } else if (localizedMsg.includes('auth/weak-password')) {
+        localizedMsg = 'Password is too weak. Must be at least 6 characters.';
+      } else if (localizedMsg.includes('auth/invalid-email')) {
+        localizedMsg = 'Invalid email/phone format.';
+      }
+      setError(localizedMsg);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -211,19 +337,189 @@ function LoginView() {
       <motion.div 
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="max-w-md w-full text-center"
+        className="max-w-md w-full"
       >
-        <div className="mb-8 inline-block p-4 bg-black text-white rotate-3 shadow-[8px_8px_0px_0px_rgba(0,0,0,0.2)]">
-          <h1 className="text-4xl font-black tracking-tighter uppercase italic">KLG PAYMENT</h1>
+        <div className="mb-6 text-center">
+          <div className="inline-block p-4 bg-black text-white rotate-3 shadow-[8px_8px_0px_0px_rgba(0,0,0,0.2)]">
+            <h1 className="text-3xl font-black tracking-tighter uppercase italic">KLG PAYMENT</h1>
+          </div>
         </div>
-        <Card className="text-left">
-          <h2 className="text-2xl font-bold mb-2">Welcome Back</h2>
-          <p className="text-gray-600 mb-8">Secure multi-channel banking for the modern age. Connect your account to continue.</p>
-          <Button onClick={handleLogin} className="w-full py-4 text-lg" variant="secondary">
-            Sign in with Google
-          </Button>
-        </Card>
-        <p className="mt-8 text-xs text-gray-500 uppercase tracking-widest font-mono">
+
+        <div className="bg-white border-2 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] overflow-hidden">
+          <div className="flex border-b-2 border-black">
+            <button 
+              type="button"
+              onClick={() => { setIsSignUp(false); setError(null); }}
+              className={cn(
+                "flex-1 py-4 text-xs font-black uppercase tracking-wider border-r-2 border-black transition-all",
+                !isSignUp ? "bg-white text-black" : "bg-gray-100 text-gray-500 hover:bg-gray-50"
+              )}
+            >
+              Sign In
+            </button>
+            <button 
+              type="button"
+              onClick={() => { setIsSignUp(true); setError(null); }}
+              className={cn(
+                "flex-1 py-4 text-xs font-black uppercase tracking-wider transition-all",
+                isSignUp ? "bg-white text-black" : "bg-gray-100 text-gray-500 hover:bg-gray-50"
+              )}
+            >
+              Create Account
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <div className="flex gap-2 mb-2">
+              <button
+                type="button"
+                onClick={() => { setAuthMethod('email'); setError(null); }}
+                className={cn(
+                  "flex-1 py-2 text-xs font-black uppercase tracking-wider border border-black transition-all flex items-center justify-center gap-2",
+                  authMethod === 'email' 
+                    ? "bg-black text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,0)]" 
+                    : "bg-white text-black hover:bg-gray-50 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-0.5 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                )}
+              >
+                <Mail size={14} /> Email Mode
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAuthMethod('phone'); setError(null); }}
+                className={cn(
+                  "flex-1 py-2 text-xs font-black uppercase tracking-wider border border-black transition-all flex items-center justify-center gap-2",
+                  authMethod === 'phone' 
+                    ? "bg-black text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,0)]" 
+                    : "bg-white text-black hover:bg-gray-50 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-0.5 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                )}
+              >
+                <Smartphone size={14} /> Phone Mode
+              </button>
+            </div>
+
+            {error && (
+              <div className="p-3 bg-red-100 border-2 border-red-500 text-red-700 text-xs font-bold uppercase flex items-center gap-2 animate-shake">
+                <AlertCircle size={16} className="shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {isSignUp && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-black">Display Name</label>
+                <input 
+                  type="text" 
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="e.g. John Doe"
+                  className="w-full p-3 border-2 border-black bg-white focus:outline-none focus:bg-gray-50 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                />
+              </div>
+            )}
+
+            {authMethod === 'email' ? (
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-black">Email Address</label>
+                <input 
+                  type="email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@example.com"
+                  className="w-full p-3 border-2 border-black bg-white focus:outline-none focus:bg-gray-50 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                  required
+                />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-black">Country Profile</label>
+                  <select
+                    value={selectedCountryId}
+                    onChange={(e) => {
+                      setSelectedCountryId(e.target.value);
+                      setError(null);
+                    }}
+                    className="w-full p-3 border-2 border-black bg-white focus:outline-none focus:bg-gray-50 font-black text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                  >
+                    {EAC_COUNTRIES.map((c) => (
+                      <option key={c.id} value={c.id} className="font-bold">
+                        {c.name} {c.code ? `(${c.code})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedCountryId === 'other' && (
+                  <div className="grid grid-cols-3 gap-2 animate-fadeIn">
+                    <div className="col-span-1 space-y-1">
+                      <label className="text-[9px] font-black uppercase tracking-wider text-black">Code</label>
+                      <input 
+                        type="text" 
+                        value={customCountryCode}
+                        onChange={(e) => setCustomCountryCode(e.target.value)}
+                        placeholder="+1"
+                        className="w-full p-3 border-2 border-black bg-white focus:outline-none focus:bg-gray-50 font-mono font-black text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-center"
+                        required
+                      />
+                    </div>
+                    <div className="col-span-2 space-y-1">
+                      <label className="text-[9px] font-black uppercase tracking-wider text-black">Country Name</label>
+                      <input 
+                        type="text" 
+                        value={customCountryName}
+                        onChange={(e) => setCustomCountryName(e.target.value)}
+                        placeholder="e.g. Canada"
+                        className="w-full p-3 border-2 border-black bg-white focus:outline-none focus:bg-gray-50 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-black">Phone Number</label>
+                  <div className="flex shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                    {selectedCountryId !== 'other' && (
+                      <span className="flex items-center justify-center px-4 border-2 border-r-0 border-black bg-gray-100 font-mono font-black text-sm select-none">
+                        {EAC_COUNTRIES.find(c => c.id === selectedCountryId)?.code}
+                      </span>
+                    )}
+                    <input 
+                      type="tel" 
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="e.g. 712345678"
+                      className="flex-1 p-3 border-2 border-black bg-white focus:outline-none focus:bg-gray-50 font-mono font-black text-sm"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-black uppercase tracking-wider text-black">Secure Password</label>
+              <input 
+                type="password" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full p-3 border-2 border-black bg-white focus:outline-none focus:bg-gray-50 font-bold text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                required
+              />
+            </div>
+
+            <Button 
+              type="submit" 
+              loading={loading} 
+              className="w-full py-4 uppercase font-black tracking-widest bg-black hover:bg-gray-900 text-white mt-2 ring-2 ring-black"
+            >
+              {isSignUp ? 'Create KLG Account' : 'Authenticate Account'}
+            </Button>
+          </form>
+        </div>
+
+        <p className="mt-8 text-xs text-gray-500 uppercase tracking-widest font-mono text-center">
           Secure • Encrypted • Global
         </p>
       </motion.div>
@@ -280,9 +576,14 @@ function Layout({ children, user, profile }: { children: React.ReactNode; user: 
               <Bell size={20} />
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-600 rounded-full border border-white"></span>
             </button>
-            <div className="hidden sm:block text-right">
-              <p className="text-[10px] font-bold uppercase opacity-50">Logged in as</p>
-              <p className="text-xs font-bold">{profile?.displayName || user.email}</p>
+            <div className="hidden sm:block text-right border-l border-black/10 pl-4 h-8 flex flex-col justify-center">
+              <p className="text-[9px] font-black uppercase text-gray-500 tracking-wider">Logged in as</p>
+              <p className="text-xs font-black">
+                {profile?.displayName || 
+                 (user.email?.endsWith('@phone.klgpayments.internal') 
+                   ? `+${user.email.split('@')[0]}` 
+                   : user.email)}
+              </p>
             </div>
             <Button onClick={() => signOut(auth)} variant="ghost" className="p-2">
               <LogOut size={20} />
@@ -1163,8 +1464,19 @@ function SettingsView({ user, profile }: { user: User; profile: UserProfile | nu
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="col-header block mb-2">Email Address</label>
-                  <input type="text" value={user.email || ''} disabled className="w-full p-3 border border-black bg-gray-50 font-mono text-sm" />
+                  <label className="col-header block mb-2">
+                    {user.email?.endsWith('@phone.klgpayments.internal') ? 'Phone Number' : 'Email Address'}
+                  </label>
+                  <input 
+                    type="text" 
+                    value={
+                      user.email?.endsWith('@phone.klgpayments.internal') 
+                        ? (profile?.phoneNumber || `+${user.email.split('@')[0]}`)
+                        : (user.email || '')
+                    } 
+                    disabled 
+                    className="w-full p-3 border border-black bg-gray-50 font-mono text-sm" 
+                  />
                 </div>
                 <div>
                   <label className="col-header block mb-2">User ID</label>
